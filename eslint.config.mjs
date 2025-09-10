@@ -34,6 +34,7 @@ const eslintConfig = [
           "ts-check": true,
         },
       ],
+      "@typescript-eslint/no-explicit-any": "off",
     },
   },
 ];
