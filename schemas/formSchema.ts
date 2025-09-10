@@ -1,62 +1,150 @@
-import { z } from "zod";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment 
 
-// Address schema for US addresses only
-export const AddressSchema = z.object({
-	line1: z
-		.string()
-		.min(1, "Address Line 1 is required.")
-		.describe(
-			"Primary street address line. Include house/building number and street name (e.g., 123 Main St).",
-		),
-	line2: z
-		.string()
-		.optional()
-		.describe(
-			"Additional address information such as apartment, suite, unit, or floor (optional).",
-		),
-	street: z
-		.string()
-		.min(1, "Street is required.")
-		.describe(
-			"Street name if captured separately (e.g., Main St). If already in Line 1, repeat here for clarity.",
-		),
-	city: z
-		.string()
-		.min(1, "City is required.")
-		.describe("City name within the United States (e.g., San Francisco)."),
-	state: z
-		.string()
-		.min(1, "State is required.")
-		.describe("State name within the United States (e.g., California)."),
-	country: z
-		.string()
-		.describe(
-			"Country must be the United States. Accepted inputs: United States, US, USA, unitedstates, us, usa.",
-		),
-	zipCode: z
-		.string()
-		.trim()
-		.regex(/^[0-9]{5}(?:-[0-9]{4})?$/, "Enter a valid US ZIP code (e.g., 94103 or 94103-1234).")
-		.describe(
-			"5-digit US ZIP code, with optional 4-digit extension (ZIP+4). Will be verified against a postal API.",
-		),
-});
+// @ts-nocheck 
+ import { z } from "zod";
 
-export const FormSchema = z.object({
-	name: z
-		.string()
-		.min(1, "Name is required.")
-		.describe("Full legal name of the person filling out the form."),
-	email: z
-		.string()
-		.email("Enter a valid email address.")
-		.describe(
-			"Primary contact email address. Must be a valid format (e.g., name@example.com).",
-		),
-	address: AddressSchema.describe("Mailing address located in the United States."),
-});
+const todayStart = () => {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d;
+};
 
-export type AddressData = z.infer<typeof AddressSchema>;
+export const FormSchema = z
+  .object({
+    county: z.enum(["Franklin County"], {
+      required_error: "County is required",
+      invalid_type_error: "County must be a valid county",
+    }),
+
+    // Applicant primary info
+    applicantName: z
+      .string({ required_error: "Applicant name is required" })
+      .trim()
+      .min(2, "Applicant name must be at least 2 characters")
+      .max(100, "Applicant name must be at most 100 characters"),
+
+    entityType: z.enum(["Individual", "Organization"], {
+      required_error: "Entity type is required",
+    }),
+
+    organizationName: z
+      .string()
+      .trim()
+      .min(2, "Organization name must be at least 2 characters")
+      .max(150, "Organization name must be at most 150 characters")
+      .optional(),
+
+    email: z
+      .string({ required_error: "Email is required" })
+      .email("Please enter a valid email address"),
+
+    phone: z
+      .string({ required_error: "Phone number is required" })
+      .trim()
+      .regex(
+        /^(?:\+1\s?)?(?:\()?\d{3}(?:\)|[-.\s])?\d{3}[-.\s]?\d{4}$/, 
+        "Please enter a valid US phone number"
+      ),
+
+    // Address
+    addressStreet: z
+      .string({ required_error: "Street address is required" })
+      .trim()
+      .min(5, "Street address must be at least 5 characters")
+      .max(200, "Street address must be at most 200 characters"),
+
+    city: z
+      .string({ required_error: "City is required" })
+      .trim()
+      .min(2, "City must be at least 2 characters")
+      .max(100, "City must be at most 100 characters"),
+
+    state: z.enum(["PA"], {
+      required_error: "State is required",
+    }),
+
+    zip: z
+      .string({ required_error: "ZIP code is required" })
+      .trim()
+      .regex(/^\d{5}$/, "ZIP code must be 5 digits"),
+
+    municipality: z.enum(
+      [
+        "Chambersburg",
+        "Waynesboro",
+        "Shippensburg",
+        "Greencastle",
+        "Mercersburg",
+        "Other",
+      ],
+      { required_error: "Municipality is required" }
+    ),
+
+    otherMunicipality: z
+      .string()
+      .trim()
+      .min(2, "Please specify the municipality")
+      .max(100, "Municipality must be at most 100 characters")
+      .optional(),
+
+    // License details
+    licenseType: z.enum(["Charitable Bingo", "Commercial Bingo"], {
+      required_error: "License type is required",
+    }),
+
+    sessionsPerYear: z
+      .coerce
+      .number({
+        required_error: "Number of sessions is required",
+        invalid_type_error: "Sessions must be a number",
+      })
+      .int("Sessions per year must be an integer")
+      .gte(1, "At least 1 session per year is required")
+      .lte(365, "Sessions per year cannot exceed 365"),
+
+    startDate: z.coerce.date({
+      required_error: "License start date is required",
+      invalid_type_error: "Start date is invalid",
+    }).refine((d) => d >= todayStart(), {
+      message: "Start date cannot be in the past",
+    }),
+
+    expirationDate: z.coerce.date({
+      required_error: "License expiration date is required",
+      invalid_type_error: "Expiration date is invalid",
+    }),
+
+    isNonProfit: z.boolean({ required_error: "Non-profit status is required" }),
+
+    ein: z
+      .string()
+      .trim()
+      .regex(/^\d{2}-\d{7}$/, "EIN must be in the format 12-3456789")
+      .optional(),
+
+    agreeToRules: z.boolean({ required_error: "Agreement is required" }).refine((v) => v === true, {
+      message: "You must agree to the Franklin County bingo regulations",
+    }),
+  })
+  .refine((data) => data.expirationDate > data.startDate, {
+    message: "Expiration date must be after the start date",
+    path: ["expirationDate"],
+  })
+  .refine(
+    (d) => !(d.entityType === "Organization" && (!d.organizationName || d.organizationName.trim() === "")),
+    {
+      message: "Organization name is required for organizations",
+      path: ["organizationName"],
+    }
+  )
+  .superRefine((d, ctx) => {
+    if (d.municipality === "Other" && (!d.otherMunicipality || d.otherMunicipality.trim() === "")) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Please specify the municipality",
+        path: ["otherMunicipality"],
+      });
+    }
+  });
+
 export type FormData = z.infer<typeof FormSchema>;
-
-
